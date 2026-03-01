@@ -1,0 +1,12 @@
+src/main/java/com/assessment/payroll/model/EmployeeType.java
+src/main/java/com/assessment/payroll/model/Employee.java
+src/main/java/com/assessment/payroll/model/PaySlip.java
+src/main/java/com/assessment/payroll/service/strategy/PayStrategy.java
+src/main/java/com/assessment/payroll/service/strategy/ContractorStrategy.java
+src/main/java/com/assessment/payroll/service/strategy/PartTimeStrategy.java
+src/main/java/com/assessment/payroll/service/strategy/FullTimeStrategy.java
+src/main/java/com/assessment/payroll/service/PayrollProcessor.java
+src/main/java/com/assessment/textanalyzer/model/StatisticsReport.java
+src/main/java/com/assessment/textanalyzer/service/TextReader.java
+src/main/java/com/assessment/textanalyzer/service/WordCounter.java
+src/main/java/com/assessment/Main.java

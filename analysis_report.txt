@@ -1,0 +1,7 @@
+Text Analysis Report
+====================
+Total Word Count: 1680
+Unique Word Count: 69
+Average Word Length: 5.63
+Longest Word: challenging
+Most Frequent Word: java
