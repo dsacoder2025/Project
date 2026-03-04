@@ -8,29 +8,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.assessment.payroll.controller.PayrollController;
+import com.assessment.config.ServiceRegistry;
 import com.assessment.payroll.model.Employee;
-import com.assessment.payroll.model.EmployeeType;
 import com.assessment.payroll.model.PaySlip;
-import com.assessment.payroll.repository.EmployeeRepository;
-import com.assessment.payroll.repository.InMemoryEmployeeRepository;
-import com.assessment.payroll.service.PayrollProcessor;
-import com.assessment.payroll.service.strategy.ContractorStrategy;
-import com.assessment.payroll.service.strategy.DefaultTaxStrategy;
-import com.assessment.payroll.service.strategy.FullTimeStrategy;
-import com.assessment.payroll.service.strategy.PartTimeStrategy;
-import com.assessment.payroll.service.strategy.PayStrategy;
-import com.assessment.payroll.service.strategy.TaxStrategy;
-import com.assessment.textanalyzer.controller.TextAnalyzerController;
+import com.assessment.payroll.service.PayrollService;
 import com.assessment.textanalyzer.model.StatisticsReport;
-import com.assessment.textanalyzer.repository.FileTextRepository;
-import com.assessment.textanalyzer.repository.TextRepository;
-import com.assessment.textanalyzer.service.TextReader;
+import com.assessment.textanalyzer.repository.DocumentRepository;
+import com.assessment.textanalyzer.service.TextAnalysisService;
+import com.assessment.textanalyzer.service.TextNormalizer;
 import com.assessment.textanalyzer.service.WordCounter;
-import com.assessment.textanalyzer.service.export.FileReportExporter;
-import com.assessment.textanalyzer.service.export.ReportExporter;
-import com.assessment.textanalyzer.service.filter.LengthWordFilter;
-import com.assessment.textanalyzer.service.filter.StopWordFilter;
 
 public class Main {
 
@@ -56,68 +42,84 @@ public class Main {
         }
 
         private static void runPayrollDemo() {
-                // Dependency Injection Setup
-                EmployeeRepository employeeRepository = new InMemoryEmployeeRepository();
+                PayrollService payrollService = ServiceRegistry.getInstance().createPayrollService();
 
-                Map<EmployeeType, PayStrategy> strategies = new HashMap<>();
-                strategies.put(EmployeeType.FULL_TIME, new FullTimeStrategy());
-                strategies.put(EmployeeType.PART_TIME, new PartTimeStrategy());
-                strategies.put(EmployeeType.CONTRACTOR, new ContractorStrategy());
+                Map<String, BigDecimal> employeeWorkUnits = new HashMap<>();
 
-                TaxStrategy taxStrategy = new DefaultTaxStrategy();
-                PayrollProcessor processor = new PayrollProcessor(strategies, taxStrategy);
-
-                PayrollController payrollController = new PayrollController(employeeRepository, processor);
-
-                // Pre-populate Data
-                Employee e1 = Employee.builder().id("E001").name("Alice (FT, High)").fullTime().payRate(6000.0)
-                                .withUnion().withRetirement().build();
-                Employee e2 = Employee.builder().id("E002").name("Bob (FT, Low)").fullTime().payRate(2500.0).build();
-                Employee e3 = Employee.builder().id("E003").name("Charlie (PT, Over Cap)").partTime().payRate(50.0)
-                                .withRetirement().build();
-                Employee e4 = Employee.builder().id("E004").name("David (PT, Normal)").partTime().payRate(40.0)
-                                .withUnion().build();
-                Employee e5 = Employee.builder().id("E005").name("Eve (Contractor)").contractor().payRate(300.0)
+                // 1. Full Time, High Salary
+                Employee e1 = Employee.builder()
+                                .id("E001").name("Alice (FT, High)")
+                                .fullTime().payRate(6000.0)
+                                .withUnion().withRetirement()
                                 .build();
-                Employee e6 = Employee.builder().id("E006").name("Frank (Contractor, Union)").contractor()
-                                .payRate(250.0).withUnion().build();
+                payrollService.registerEmployee(e1);
+                employeeWorkUnits.put(e1.getId(), BigDecimal.ZERO); // Hours irrelevant
 
-                payrollController.addEmployee(e1);
-                payrollController.addEmployee(e2);
-                payrollController.addEmployee(e3);
-                payrollController.addEmployee(e4);
-                payrollController.addEmployee(e5);
-                payrollController.addEmployee(e6);
+                // 2. Full Time, Low Salary
+                Employee e2 = Employee.builder()
+                                .id("E002").name("Bob (FT, Low)")
+                                .fullTime().payRate(2500.0)
+                                .build();
+                payrollService.registerEmployee(e2);
+                employeeWorkUnits.put(e2.getId(), BigDecimal.ZERO);
+
+                // 3. Part Time, Over Cap
+                Employee e3 = Employee.builder()
+                                .id("E003").name("Charlie (PT, Over Cap)")
+                                .partTime().payRate(50.0)
+                                .withRetirement()
+                                .build();
+                payrollService.registerEmployee(e3);
+                employeeWorkUnits.put(e3.getId(), BigDecimal.valueOf(130.0)); // 130 hours -> should cap at 120
+
+                // 4. Part Time, Under Cap
+                Employee e4 = Employee.builder()
+                                .id("E004").name("David (PT, Normal)")
+                                .partTime().payRate(40.0)
+                                .withUnion()
+                                .build();
+                payrollService.registerEmployee(e4);
+                employeeWorkUnits.put(e4.getId(), BigDecimal.valueOf(80.0));
+
+                // 5. Contractor, Long duration
+                Employee e5 = Employee.builder()
+                                .id("E005").name("Eve (Contractor)")
+                                .contractor().payRate(300.0)
+                                .build();
+                payrollService.registerEmployee(e5);
+                employeeWorkUnits.put(e5.getId(), BigDecimal.valueOf(20.0)); // 20 days
+
+                // 6. Contractor, Union Member
+                Employee e6 = Employee.builder()
+                                .id("E006").name("Frank (Contractor, Union)")
+                                .contractor().payRate(250.0)
+                                .withUnion()
+                                .build();
+                payrollService.registerEmployee(e6);
+                employeeWorkUnits.put(e6.getId(), BigDecimal.valueOf(10.0));
 
                 // Showcase editing employee via toBuilder:
-                Employee initialEmployee = Employee.builder().id("E007").name("Grace (Trainee)").partTime()
-                                .payRate(15.0).build();
+                Employee initialEmployee = Employee.builder()
+                                .id("E007").name("Grace (Trainee)").partTime().payRate((15.0)).build();
                 System.out.println("--- Employee Update Demo ---");
                 System.out.println("Initial Employee: " + initialEmployee.getName() + " [Rate: "
                                 + initialEmployee.getPayRate() + ", isUnion: " + initialEmployee.isUnionMember() + "]");
 
-                Employee promotedEmployee = initialEmployee.toBuilder().name("Grace (Full Time, Union)").fullTime()
-                                .payRate(300.0).withUnion().build();
+                Employee promotedEmployee = initialEmployee.toBuilder()
+                                .name("Grace (Full Time, Union)")
+                                .fullTime()
+                                .payRate(150.0)
+                                .withUnion()
+                                .build();
 
                 System.out.println("Updated Employee: " + promotedEmployee.getName() + " [Rate: "
                                 + promotedEmployee.getPayRate() + ", isUnion: " + promotedEmployee.isUnionMember()
                                 + "]");
                 System.out.println("----- End Update -----");
+                payrollService.registerEmployee(promotedEmployee); // Add to processing system too!
+                employeeWorkUnits.put(promotedEmployee.getId(), BigDecimal.ZERO);
 
-                payrollController.addEmployee(promotedEmployee);
-
-                // Define work units for the month
-                Map<String, BigDecimal> workUnits = new HashMap<>();
-                workUnits.put(e1.getId(), BigDecimal.ZERO);
-                workUnits.put(e2.getId(), BigDecimal.ZERO);
-                workUnits.put(e3.getId(), BigDecimal.valueOf(130.0)); // 130 hours -> should cap at 120
-                workUnits.put(e4.getId(), BigDecimal.valueOf(80.0));
-                workUnits.put(e5.getId(), BigDecimal.valueOf(20.0)); // 20 days
-                workUnits.put(e6.getId(), BigDecimal.valueOf(10.0));
-                workUnits.put(promotedEmployee.getId(), BigDecimal.ZERO);
-
-                // Process Payroll
-                List<PaySlip> slips = payrollController.processPayroll(workUnits);
+                List<PaySlip> slips = payrollService.processPayroll(employeeWorkUnits);
 
                 System.out.println("\nGenerated " + slips.size() + " PaySlips:");
                 for (PaySlip slip : slips) {
@@ -128,17 +130,6 @@ public class Main {
         }
 
         private static void runTextAnalyzerDemo() throws IOException {
-                // Dependency Injection Setup
-                TextRepository textRepository = new FileTextRepository();
-                TextReader textReader = new TextReader();
-                WordCounter wordCounter = new WordCounter(List.of(
-                                new LengthWordFilter(3),
-                                new StopWordFilter()));
-                ReportExporter reportExporter = new FileReportExporter();
-
-                TextAnalyzerController controller = new TextAnalyzerController(textRepository, textReader, wordCounter,
-                                reportExporter);
-
                 // Create a sample file
                 String sampleText = """
                                 The quick brown fox jumps over the lazy dog.
@@ -156,7 +147,7 @@ public class Main {
                                 Repeat repeat repeat.
                                 """;
 
-                // Make it 500+ words by repeating
+                // Make it 500+ words by repeating?
                 StringBuilder bigText = new StringBuilder();
                 for (int i = 0; i < 20; i++) {
                         bigText.append(sampleText).append("\n");
@@ -166,8 +157,11 @@ public class Main {
                 Files.writeString(tempFile, bigText.toString());
                 System.out.println("Created sample file: " + tempFile.toAbsolutePath());
 
-                // Process document
-                StatisticsReport report = controller.analyzeDocument(tempFile.toString());
+                // Process via ServiceRegistry
+                ServiceRegistry registry = ServiceRegistry.getInstance();
+                TextAnalysisService analysisService = registry.getTextAnalysisService();
+
+                StatisticsReport report = analysisService.analyzeDocument(tempFile.toString());
 
                 System.out.println("Analysis Results:");
                 System.out.println("Total Word Count: " + report.getTotalWordCount());
@@ -176,9 +170,31 @@ public class Main {
                 System.out.println("Longest Word: " + report.getLongestWord());
                 System.out.println("Most Frequent Word: " + report.getMostFrequentWord());
 
+                // We need the counts map to demo the counter methods. This wasn't exposed by
+                // the report directly.
+                // For demonstration, let's re-count here or expose it. Since it's a demo, we
+                // will just count a stream.
+                DocumentRepository docRepo = registry.getDocumentRepository();
+                TextNormalizer normalizer = registry.getTextNormalizer();
+                WordCounter counter = registry.getWordCounter();
+
+                Map<String, Integer> counts;
+                try (java.util.stream.Stream<String> normalized = normalizer
+                                .normalize(docRepo.readLines(tempFile.toString()))) {
+                        counts = counter.countWords(normalized);
+                }
+
+                System.out.println("\nTop 5 Words:");
+                List<Map.Entry<String, Integer>> top5 = counter.getTopNWords(counts, 5);
+                top5.forEach(e -> System.out.println(e.getKey() + ": " + e.getValue()));
+
+                System.out.println("\nWords starting with 'pro':");
+                List<String> proWords = counter.getWordsStartingWith(counts, "pro");
+                System.out.println(proWords);
+
                 // Export
                 String exportPath = "analysis_report.txt";
-                controller.exportReport(report, exportPath);
+                analysisService.generateAndSaveReport(tempFile.toString(), exportPath);
                 System.out.println("\nReport exported to: " + exportPath);
         }
 }

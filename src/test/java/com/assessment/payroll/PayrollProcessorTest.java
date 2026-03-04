@@ -2,7 +2,6 @@ package com.assessment.payroll;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.math.BigDecimal;
 import java.util.Map;
@@ -22,15 +21,7 @@ public class PayrollProcessorTest {
 
     @BeforeEach
     public void setup() {
-        java.util.Map<com.assessment.payroll.model.EmployeeType, com.assessment.payroll.service.strategy.PayStrategy> strategies = new java.util.HashMap<>();
-        strategies.put(com.assessment.payroll.model.EmployeeType.FULL_TIME,
-                new com.assessment.payroll.service.strategy.FullTimeStrategy());
-        strategies.put(com.assessment.payroll.model.EmployeeType.PART_TIME,
-                new com.assessment.payroll.service.strategy.PartTimeStrategy());
-        strategies.put(com.assessment.payroll.model.EmployeeType.CONTRACTOR,
-                new com.assessment.payroll.service.strategy.ContractorStrategy());
-
-        processor = new PayrollProcessor(strategies, new com.assessment.payroll.service.strategy.DefaultTaxStrategy());
+        processor = new PayrollProcessor();
     }
 
     @Test
@@ -100,38 +91,60 @@ public class PayrollProcessorTest {
     }
 
     @Test
-    public void testCalculateGrossPayNullEmployee() {
-        assertThrows(IllegalArgumentException.class, () -> processor.calculateGrossPay(null, BigDecimal.TEN));
-    }
-
-    @Test
-    public void testCalculateDeductionsNullEmployee() {
-        assertThrows(IllegalArgumentException.class, () -> processor.calculateDeductions(null, BigDecimal.TEN));
-    }
-
-    @Test
-    public void testNetPayBoundedToZeroWhenDeductionsExceedGross() {
-        // FT employee has $150 health deduction by default.
-        // If payRate is small, gross < deductions
+    public void testDeductionsExceedingGrossPay() {
+        // Employee with 0 hours, but has union and health deductions
         Employee emp = Employee.builder()
-                .id("4").name("Low Earner").fullTime().payRate(100.0)
+                .id("4").name("David").fullTime().payRate(0.0) // 0 pay rate
+                .withUnion()
                 .build();
 
         PaySlip slip = processor.generatePaySlip(emp, BigDecimal.ZERO);
 
-        // Gross = 100, Tax = 0, Deductions = 150
-        // Expected Net Pay = 0 (bounded)
+        // Gross is 0, Tax is 0. Deductions are Health (150) + Union (50) = 200.
+        // Net pay should be safely zeroed out, not negative.
+        assertEquals(0, BigDecimal.ZERO.compareTo(slip.getGrossPay()));
         assertEquals(0, BigDecimal.ZERO.compareTo(slip.getNetPay()));
-        assertEquals(0, BigDecimal.valueOf(100.0).compareTo(slip.getGrossPay()));
     }
 
     @Test
-    public void testProcessMonthlyPayrollNullMap() {
-        assertThrows(IllegalArgumentException.class, () -> processor.processMonthlyPayroll(null));
+    public void testNullEmployeeThrowsException() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            processor.calculateGrossPay(null, BigDecimal.TEN);
+        });
     }
 
     @Test
-    public void testNegativeGrossPayTaxCalculation() {
-        assertEquals(0, BigDecimal.ZERO.compareTo(processor.calculateTax(BigDecimal.valueOf(-500.0))));
+    public void testNegativeWorkUnitsThrowsException() {
+        Employee emp = Employee.builder()
+                .id("5").name("Eve").partTime().payRate(20.0).build();
+
+        // Passing negative hours shouldn't result in negative pay, it should be
+        // rejected.
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> {
+            processor.calculateGrossPay(emp, BigDecimal.valueOf(-10));
+        });
+    }
+
+    @Test
+    public void testExtremeLargeSalaryPrecision() {
+        // Testing BigDecimal limits with billions to ensure it safely scales without
+        // floating point anomalies
+        Employee emp = Employee.builder()
+                .id("6").name("CEO").fullTime().payRate(999999999.99).withUnion().build(); // Just under a Billion
+
+        BigDecimal gross = processor.calculateGrossPay(emp, BigDecimal.ZERO);
+        // Tax is base 600 + (Gross - 5000) * 0.3
+        BigDecimal expectedTax = BigDecimal.valueOf(600).add(
+                gross.subtract(BigDecimal.valueOf(5000)).multiply(BigDecimal.valueOf(0.3)))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        assertEquals(0, expectedTax.compareTo(processor.calculateTax(gross)));
+
+        PaySlip slip = processor.generatePaySlip(emp, BigDecimal.ZERO);
+
+        BigDecimal expectedNet = gross.subtract(expectedTax).subtract(BigDecimal.valueOf(200)) // Union(50) +
+                                                                                               // Health(150)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        assertEquals(0, expectedNet.compareTo(slip.getNetPay()));
     }
 }

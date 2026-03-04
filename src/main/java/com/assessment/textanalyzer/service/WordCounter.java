@@ -1,7 +1,5 @@
 package com.assessment.textanalyzer.service;
 
-import com.assessment.textanalyzer.service.filter.WordFilter;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -9,11 +7,10 @@ import java.util.stream.Stream;
 
 public class WordCounter {
 
-    private final List<WordFilter> filters;
-
-    public WordCounter(List<WordFilter> filters) {
-        this.filters = filters != null ? filters : new ArrayList<>();
-    }
+    private static final Set<String> STOP_WORDS = Set.of(
+            "the", "and", "is", "at", "which", "on", "a", "an", "as", "are",
+            "was", "were", "been", "be", "have", "has", "had", "do", "does", "did",
+            "of", "to", "in", "for", "with", "it", "that", "this", "from", "by");
 
     public Map<String, Integer> countWords(Stream<String> normalizedLines) {
         Map<String, Integer> frequencyMap = new ConcurrentHashMap<>();
@@ -25,22 +22,13 @@ public class WordCounter {
         normalizedLines.parallel().forEach(line -> {
             String[] words = line.split("\\s+");
             for (String word : words) {
-                if (isValidWord(word)) {
+                if (word.length() >= 3 && !STOP_WORDS.contains(word)) {
                     frequencyMap.merge(word, 1, Integer::sum);
                 }
             }
         });
 
         return frequencyMap;
-    }
-
-    private boolean isValidWord(String word) {
-        for (WordFilter filter : filters) {
-            if (!filter.isValid(word)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     public Map<String, Integer> countWords(String normalizedText) {

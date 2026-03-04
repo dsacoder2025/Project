@@ -10,4 +10,6 @@ public interface EmployeeRepository {
     Optional<Employee> findById(String id);
 
     List<Employee> findAll();
+
+    void deleteById(String id);
 }

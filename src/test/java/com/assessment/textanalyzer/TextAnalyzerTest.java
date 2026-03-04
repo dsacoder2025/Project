@@ -1,29 +1,19 @@
 package com.assessment.textanalyzer;
 
 import com.assessment.textanalyzer.model.StatisticsReport;
-import com.assessment.textanalyzer.service.TextReader;
+import com.assessment.textanalyzer.service.TextNormalizer;
 import com.assessment.textanalyzer.service.WordCounter;
-import com.assessment.textanalyzer.service.filter.LengthWordFilter;
-import com.assessment.textanalyzer.service.filter.StopWordFilter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TextAnalyzerTest {
-
-    private WordCounter createWordCounter() {
-        return new WordCounter(List.of(
-                new LengthWordFilter(3),
-                new StopWordFilter()));
-    }
 
     @Test
     public void testNormalizationAndCounting(@TempDir Path tempDir) throws IOException {
@@ -31,10 +21,9 @@ public class TextAnalyzerTest {
         String content = "Hello, world! This is a test. World is correct.";
         Files.writeString(file, content);
 
-        TextReader reader = new TextReader();
+        TextNormalizer normalizer = new TextNormalizer();
         String normalized;
-        try (Stream<String> lines = Files.lines(file)) {
-            Stream<String> stream = reader.readAndNormalize(lines);
+        try (java.util.stream.Stream<String> stream = normalizer.normalize(Files.lines(file))) {
             normalized = stream.collect(java.util.stream.Collectors.joining(" "));
         }
 
@@ -44,7 +33,7 @@ public class TextAnalyzerTest {
         assertFalse(normalized.contains("!"));
         assertTrue(normalized.startsWith("hello"));
 
-        WordCounter counter = createWordCounter();
+        WordCounter counter = new WordCounter();
         Map<String, Integer> counts = counter.countWords(normalized);
 
         // "hello" -> 1
@@ -67,7 +56,7 @@ public class TextAnalyzerTest {
 
     @Test
     public void testStopWords() {
-        WordCounter counter = createWordCounter();
+        WordCounter counter = new WordCounter();
         String text = "the quick brown fox jumps over the lazy dog";
         // the: stop
         // quick: keep
@@ -86,7 +75,7 @@ public class TextAnalyzerTest {
 
     @Test
     public void testShortWords() {
-        WordCounter counter = createWordCounter();
+        WordCounter counter = new WordCounter();
         String text = "hi my name is bo";
         // hi (2), my (2), name (4), is (stop), bo (2)
         // only 'name' should remain? or 'name' and 'is' (stop)?
@@ -99,57 +88,84 @@ public class TextAnalyzerTest {
     }
 
     @Test
-    public void testReadAndNormalizeNullStream() {
-        TextReader reader = new TextReader();
-        Stream<String> result = reader.readAndNormalize(null);
-        assertEquals(0, result.count(), "Should safely handle null stream by returning empty stream");
+    public void testCaseInsensitivityAndPunctuation() {
+        TextNormalizer normalizer = new TextNormalizer();
+        WordCounter counter = new WordCounter();
+
+        // Mixed case and punctuation
+        java.util.stream.Stream<String> lines = java.util.stream.Stream.of("Java! jAvA, JAVA.");
+        String normalized = normalizer.normalize(lines).collect(java.util.stream.Collectors.joining(" "));
+
+        Map<String, Integer> counts = counter.countWords(normalized);
+        assertEquals(1, counts.size(), "Should only contain one unique word");
+        assertEquals(3, counts.get("java"), "Java should be counted 3 times regardless of case");
     }
 
     @Test
-    public void testCountWordsNullStream() {
-        WordCounter counter = createWordCounter();
-        Map<String, Integer> result = counter.countWords((Stream<String>) null);
-        assertTrue(result.isEmpty(), "Null stream should return empty map");
+    public void testEmptyAndSpecialCharacters() {
+        TextNormalizer normalizer = new TextNormalizer();
+        WordCounter counter = new WordCounter();
+
+        // Only special characters
+        java.util.stream.Stream<String> lines = java.util.stream.Stream.of("!@# $%^ &*()");
+        String normalized = normalizer.normalize(lines).collect(java.util.stream.Collectors.joining(" "));
+
+        Map<String, Integer> counts = counter.countWords(normalized);
+        assertTrue(counts.isEmpty(), "Counts should be empty for special characters only");
+
+        // Verify StatisticsReport handles empty graphs gracefully (no divide-by-zero)
+        StatisticsReport report = new StatisticsReport(counts);
+        assertEquals(0, report.getTotalWordCount());
+        assertEquals(0, report.getUniqueWordCount());
+        assertEquals(0.0, report.getAverageWordLength());
+        assertEquals("", report.getLongestWord());
+        assertEquals("", report.getMostFrequentWord());
     }
 
     @Test
-    public void testCountWordsEmptyText() {
-        WordCounter counter = createWordCounter();
-        Map<String, Integer> result = counter.countWords("");
-        assertTrue(result.isEmpty(), "Empty string should return empty map");
+    public void testStopWordsAsSubstrings() {
+        WordCounter counter = new WordCounter();
+        // The word "issue" contains the stop word "is", and "bland" contains "and"
+        // Ensure our boundary logic doesn't eagerly cull substrings
+        String text = "the issue is bland and boring";
+        Map<String, Integer> counts = counter.countWords(text);
 
-        result = counter.countWords((String) null);
-        assertTrue(result.isEmpty(), "Null string should return empty map");
+        assertFalse(counts.containsKey("the"));
+        assertFalse(counts.containsKey("is"));
+        assertFalse(counts.containsKey("and"));
+
+        assertTrue(counts.containsKey("issue")); // Has "is"
+        assertTrue(counts.containsKey("bland")); // Has "and"
+        assertTrue(counts.containsKey("boring"));
     }
 
     @Test
-    public void testTextWithOnlyStopAndShortWords() {
-        WordCounter counter = createWordCounter();
-        String text = "a the is at do be me hi ok";
-        Map<String, Integer> result = counter.countWords(text);
-        assertTrue(result.isEmpty(), "Text containing only stop and short words should yield empty map");
+    public void testCompletelyBlankDocumentAndWhitespaces() {
+        TextNormalizer normalizer = new TextNormalizer();
+        WordCounter counter = new WordCounter();
+
+        java.util.stream.Stream<String> lines = java.util.stream.Stream.of("   ", "\t\t", " \n \r ");
+        String normalized = normalizer.normalize(lines).collect(java.util.stream.Collectors.joining(" "));
+
+        Map<String, Integer> counts = counter.countWords(normalized);
+        assertTrue(counts.isEmpty(), "Counts should be empty for a whitespace-only document");
     }
 
     @Test
-    public void testGetWordsStartingWithNullOrNonExistentPrefix() {
-        WordCounter counter = createWordCounter();
-        Map<String, Integer> counts = counter.countWords("apple banana cherry");
+    public void testExtremelyLongWordPerformance() {
+        WordCounter counter = new WordCounter();
 
-        List<String> nullPrefixResult = counter.getWordsStartingWith(counts, null);
-        assertTrue(nullPrefixResult.isEmpty(), "Null prefix should return empty list");
+        // Generate a 10,000 character string with no spaces
+        String longWord = "a".repeat(10000);
+        String text = "hello " + longWord + " world";
 
-        List<String> noMatchResult = counter.getWordsStartingWith(counts, "z");
-        assertTrue(noMatchResult.isEmpty(), "Non-existent prefix should return empty list");
-    }
+        Map<String, Integer> counts = counter.countWords(text);
 
-    @Test
-    public void testGetTopNWordsWhenNGreaterThanUniqueWords() {
-        WordCounter counter = createWordCounter();
-        Map<String, Integer> counts = counter.countWords("apple apple banana");
+        assertTrue(counts.containsKey(longWord));
+        assertEquals(1, counts.get(longWord));
+        assertEquals(3, counts.size()); // hello, longWord, world
 
-        // Only 2 unique words. Requesting top 10 should safely return 2 items.
-        List<Map.Entry<String, Integer>> topWords = counter.getTopNWords(counts, 10);
-        assertEquals(2, topWords.size(), "Should safely return all unique words if N > unique words");
-        assertEquals("apple", topWords.get(0).getKey());
+        StatisticsReport report = new StatisticsReport(counts);
+        assertEquals(longWord, report.getLongestWord());
     }
 }

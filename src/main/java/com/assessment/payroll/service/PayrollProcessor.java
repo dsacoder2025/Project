@@ -3,8 +3,10 @@ package com.assessment.payroll.service;
 import com.assessment.payroll.model.Employee;
 import com.assessment.payroll.model.EmployeeType;
 import com.assessment.payroll.model.PaySlip;
+import com.assessment.payroll.service.strategy.ContractorStrategy;
+import com.assessment.payroll.service.strategy.FullTimeStrategy;
+import com.assessment.payroll.service.strategy.PartTimeStrategy;
 import com.assessment.payroll.service.strategy.PayStrategy;
-import com.assessment.payroll.service.strategy.TaxStrategy;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -16,14 +18,12 @@ import java.util.stream.Collectors;
 public class PayrollProcessor {
 
     private final Map<EmployeeType, PayStrategy> strategies;
-    private final TaxStrategy taxStrategy;
 
-    public PayrollProcessor(Map<EmployeeType, PayStrategy> strategies, TaxStrategy taxStrategy) {
-        if (strategies == null || taxStrategy == null) {
-            throw new IllegalArgumentException("Strategies and TaxStrategy cannot be null");
-        }
-        this.strategies = strategies;
-        this.taxStrategy = taxStrategy;
+    public PayrollProcessor() {
+        this.strategies = new HashMap<>();
+        this.strategies.put(EmployeeType.FULL_TIME, new FullTimeStrategy());
+        this.strategies.put(EmployeeType.PART_TIME, new PartTimeStrategy());
+        this.strategies.put(EmployeeType.CONTRACTOR, new ContractorStrategy());
     }
 
     private PayStrategy getStrategy(EmployeeType type) {
@@ -35,13 +35,37 @@ public class PayrollProcessor {
     }
 
     public BigDecimal calculateGrossPay(Employee employee, BigDecimal hoursOrDays) {
-        if (employee == null)
-            throw new IllegalArgumentException("Employee cannot be null");
+        if (employee == null || hoursOrDays == null)
+            throw new IllegalArgumentException("Employee and work units cannot be null");
+        if (hoursOrDays.compareTo(BigDecimal.ZERO) < 0)
+            throw new IllegalArgumentException("Work units (hours/days) cannot be negative");
         return round(getStrategy(employee.getEmployeeType()).calculateGrossPay(employee, hoursOrDays));
     }
 
     public BigDecimal calculateTax(BigDecimal grossPay) {
-        return taxStrategy.calculateTax(grossPay);
+        if (grossPay.compareTo(BigDecimal.ZERO) < 0)
+            return BigDecimal.ZERO;
+
+        BigDecimal tax = BigDecimal.ZERO;
+
+        BigDecimal threshold1 = BigDecimal.valueOf(1000);
+        BigDecimal threshold2 = BigDecimal.valueOf(3000);
+        BigDecimal threshold3 = BigDecimal.valueOf(5000);
+
+        if (grossPay.compareTo(threshold1) <= 0) {
+            tax = BigDecimal.ZERO;
+        } else if (grossPay.compareTo(threshold2) <= 0) {
+            tax = grossPay.subtract(threshold1).multiply(BigDecimal.valueOf(0.10));
+        } else if (grossPay.compareTo(threshold3) <= 0) {
+
+            BigDecimal baseTax = BigDecimal.valueOf(200);
+            tax = baseTax.add(grossPay.subtract(threshold2).multiply(BigDecimal.valueOf(0.20)));
+        } else {
+
+            BigDecimal baseTax = BigDecimal.valueOf(600);
+            tax = baseTax.add(grossPay.subtract(threshold3).multiply(BigDecimal.valueOf(0.30)));
+        }
+        return round(tax);
     }
 
     public Map<String, BigDecimal> calculateDeductions(Employee employee, BigDecimal grossPay) {

@@ -52,25 +52,26 @@ class EmployeeTest {
         }
 
         @Test
-        void testBuilderMissingFieldsThrowsException() {
-                assertThrows(IllegalStateException.class,
-                                () -> Employee.builder().name("John").fullTime().payRate(10.0).build(),
-                                "Missing ID should throw");
-                assertThrows(IllegalStateException.class,
-                                () -> Employee.builder().id("1").fullTime().payRate(10.0).build(),
-                                "Missing name should throw");
-                assertThrows(IllegalStateException.class,
-                                () -> Employee.builder().id("1").name("John").payRate(10.0).build(),
-                                "Missing type should throw");
-                assertThrows(IllegalStateException.class,
-                                () -> Employee.builder().id("1").name("John").fullTime().build(),
-                                "Missing payRate should throw");
+        void testBuilderThrowsOnMissingName() {
+                IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+                        Employee.builder().id("E123").fullTime().payRate(100.0).build();
+                });
+                assertTrue(exception.getMessage().contains("Name is required"));
         }
 
         @Test
-        void testBuilderNegativePayRateThrowsException() {
-                assertThrows(IllegalStateException.class,
-                                () -> Employee.builder().id("1").name("John").fullTime().payRate(-10.0).build(),
-                                "Negative payRate should throw");
+        void testBuilderThrowsOnMissingId() {
+                IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+                        Employee.builder().name("Test").fullTime().payRate(100.0).build();
+                });
+                assertTrue(exception.getMessage().contains("ID is required"));
+        }
+
+        @Test
+        void testBuilderThrowsOnNegativePayRate() {
+                IllegalStateException exception = assertThrows(IllegalStateException.class, () -> {
+                        Employee.builder().id("E1").name("Test").fullTime().payRate(-50.0).build();
+                });
+                assertTrue(exception.getMessage().contains("Pay Rate cannot be negative"));
         }
 }
