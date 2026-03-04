@@ -1,18 +1,16 @@
 package com.assessment.textanalyzer.service;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.util.stream.Stream;
 
 public class TextReader {
 
-    public String readAndNormalize(String filePath) throws IOException {
-        String content = Files.readString(Path.of(filePath));
-        
-        
-        return content.toLowerCase()
+    public Stream<String> readAndNormalize(Stream<String> lines) {
+        if (lines == null) {
+            return Stream.empty();
+        }
+        return lines.map(line -> line.toLowerCase()
                 .replaceAll("[^a-z0-9\\s]", " ")
-                .replaceAll("\\s+", " ") 
-                .trim();
+                .replaceAll("\\s+", " ")
+                .trim());
     }
 }

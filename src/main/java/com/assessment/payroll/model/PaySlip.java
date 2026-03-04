@@ -10,7 +10,8 @@ public class PaySlip {
     private Map<String, BigDecimal> deductions;
     private BigDecimal netPay;
 
-    public PaySlip(Employee employee, BigDecimal grossPay, BigDecimal taxAmount, Map<String, BigDecimal> deductions, BigDecimal netPay) {
+    public PaySlip(Employee employee, BigDecimal grossPay, BigDecimal taxAmount, Map<String, BigDecimal> deductions,
+            BigDecimal netPay) {
         this.employee = employee;
         this.grossPay = grossPay;
         this.taxAmount = taxAmount;
@@ -18,15 +19,40 @@ public class PaySlip {
         this.netPay = netPay;
     }
 
-    public Employee getEmployee() { return employee; }
-    public BigDecimal getGrossPay() { return grossPay; }
-    public BigDecimal getTaxAmount() { return taxAmount; }
-    public Map<String, BigDecimal> getDeductions() { return deductions; }
-    public BigDecimal getNetPay() { return netPay; }
+    public Employee getEmployee() {
+        return employee;
+    }
+
+    public BigDecimal getGrossPay() {
+        return grossPay;
+    }
+
+    public BigDecimal getTaxAmount() {
+        return taxAmount;
+    }
+
+    public Map<String, BigDecimal> getDeductions() {
+        return deductions;
+    }
+
+    public BigDecimal getNetPay() {
+        return netPay;
+    }
 
     @Override
     public String toString() {
-        return String.format("PaySlip for %s (ID: %s)\nGross Pay: $%.2f\nTax: $%.2f\nDeductions: %s\nNet Pay: $%.2f",
+        String baseResult = String.format(
+                "PaySlip for %s (ID: %s)\nGross Pay: $%.2f\nTax: $%.2f\nDeductions: %s\nNet Pay: $%.2f",
                 employee.getName(), employee.getId(), grossPay, taxAmount, deductions, netPay);
+
+        // Check if deductions exceed Gross - Tax precisely
+        BigDecimal totalDeductions = deductions.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal difference = grossPay.subtract(taxAmount).subtract(totalDeductions);
+
+        if (difference.compareTo(BigDecimal.ZERO) < 0) {
+            baseResult += "\nAttention: Deductions exceeded gross pay capabilities. Net pay cleanly zeroed.";
+        }
+
+        return baseResult;
     }
 }
